@@ -24,11 +24,15 @@ namespace MediaInfoNET
 {
     public partial class MainWindow : Window, INotifyPropertyChanged
     {
+        private string SourcePath = string.Empty;
+        private string ActiveGroup = string.Empty;
+        private string _BorderColor = string.Empty;
+        private string _HighlightColor = string.Empty;
+        private string _ItemHoverColor = string.Empty;        
+        private string _TextSelectionColor = string.Empty;
+        
         public event PropertyChangedEventHandler PropertyChanged;
-
-        string SourcePath = "";
-        String ActiveGroup = "";
-
+        
         List<MediaInfoParameter> Items = new List<MediaInfoParameter>();
         List<MediaInfoParameter> ItemsRaw = new List<MediaInfoParameter>();
 
@@ -37,77 +41,101 @@ namespace MediaInfoNET
             InitializeComponent();
             DataContext = this;
             ApplySettings();
+            IsNotifying = true;
             WriteShellRegistryKey();
             Update.Updating += () => Dispatcher.Invoke(() => Close());
 
             if (Environment.GetCommandLineArgs().Length > 1)
                 LoadFile(Environment.GetCommandLineArgs()[1]);
+                
             else
                 SetText("Drag files here or right-click.");
         }
+        
+        /// <summary>
+        /// Enables/disables property change notifications.
+        /// </summary>
+        public bool IsNotifying { get; set; }
 
         void WriteShellRegistryKey()
         {
-            string keyPath = @"HKCU\Software\Microsoft\Windows\CurrentVersion\App Paths\" +
+            var keyPath = @"HKCU\Software\Microsoft\Windows\CurrentVersion\App Paths\" +
                 Path.GetFileName(AppHelp.ExecutablePath);
             
             if (!File.Exists(RegistryHelp.GetString(keyPath, null)))
                 RegistryHelp.SetValue(keyPath, null, AppHelp.ExecutablePath);
         }
-
-        private void NotifyPropertyChanged([CallerMemberName] string propertyName = "")
+        
+        [EditorBrowsable(EditorBrowsableState.Never)]
+        protected void OnPropertyChanged(PropertyChangedEventArgs e) => PropertyChanged?.Invoke(this, e);
+        
+        /// <summary>
+        /// Raises a change notification indicating that all bindings should be refreshed.
+        /// </summary>
+        public void Refresh() => RaiseChange(string.Empty);
+        
+        /// <summary>
+        /// Notifies subscribers of the property change.
+        /// </summary>
+        /// <param name="PropertyName">The name of the property</param>
+        public void RaiseChange([CallerMemberName] string PropertyName = default)
         {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+            if (IsNotifying)
+                OnUIThread(() => OnPropertyChanged(new PropertyChangedEventArgs(PropertyName)));
         }
+        
+        /// <summary>
+        /// Sets a backing field value and if any changes occur sends notification.
+        /// </summary>
+        /// <typeparam name="T">The Type</typeparam>
+        /// <param name="Field">The reference field to update.</param>
+        /// <param name="Value">The new value</param>
+        /// <param name="PropertyName">The property name</param>
+        protected void Raise<T>(ref T Field, T Value, [CallerMemberName] string PropertyName = default)
+        {
+            if (EqualityComparer<T>.Default.Equals(Field, Value))
+            {
+                return;
+            }
 
-        string _TextSelectionColor = "";
-
-        public string TextSelectionColor {
+            Field = Value;
+            RaiseChange(PropertyName ?? string.Empty);        
+        }
+        
+        /// <summary>
+        /// Executes the action on the UI thread.
+        /// </summary>
+        /// <param name="Action">The Action</param>
+        protected void OnUIThread(Action Action) => Dispatcher.CurrentDispatcher?.Invoke(Action);
+        
+        public string TextSelectionColor 
+        {
             get => _TextSelectionColor;
-            set {
-                _TextSelectionColor = value;
-                NotifyPropertyChanged();
-            }
+            set => Raise(ref _TextSelectionColor, value);
         }
 
-        string _BorderColor = "";
-
-        public string BorderColor {
+        public string BorderColor 
+        {
             get => _BorderColor;
-            set {
-                _BorderColor = value;
-                NotifyPropertyChanged();
-            }
+            set => Raise(ref _BorderColor, value);
         }
-
-        string _ItemSelectionColor = "";
-
-        public string ItemSelectionColor {
+        
+        public string ItemSelectionColor 
+        {
             get => _ItemSelectionColor;
-            set {
-                _ItemSelectionColor = value;
-                NotifyPropertyChanged();
-            }
+            set => Raise(ref _ItemSelectionColor, value);
         }
-
-        string _ItemHoverColor = "";
-
-        public string ItemHoverColor {
+        
+        public string ItemHoverColor 
+        {
             get => _ItemHoverColor;
-            set {
-                _ItemHoverColor = value;
-                NotifyPropertyChanged();
-            }
+            set =>  Raise(ref _ItemHoverColor, value);
         }
-
-        string _HighlightColor = "";
-
-        public string HighlightColor {
+        
+        public string HighlightColor 
+        {
             get => _HighlightColor;
-            set {
-                _HighlightColor = value;
-                NotifyPropertyChanged();
-            }
+            set =>  Raise(ref _HighlightColor, value);
         }
 
         void ApplySettings()
@@ -118,13 +146,16 @@ namespace MediaInfoNET
             Height = App.Settings.WindowHeight;
             WindowStartupLocation = App.Settings.CenterScreen ? WindowStartupLocation.CenterScreen : WindowStartupLocation.Manual;
             Theme theme;
-
-            if (App.Settings.Theme == "Light")
+            
+            if (App.Settings.Theme is "Light")
                 theme = App.Settings.LightTheme;
-            else if (App.Settings.Theme == "Dark")
+                
+            else if (App.Settings.Theme is "Dark")
                 theme = App.Settings.DarkTheme;
+                
             else if (AppHelp.IsDarkTheme)
                 theme = App.Settings.DarkTheme;
+                
             else
                 theme = App.Settings.LightTheme;
 
@@ -170,16 +201,17 @@ namespace MediaInfoNET
 
             TabListBox.ItemsSource = tabItems;
 
-            if (tabItems.Count > 1 && SearchTextBox.Text != "")
+            if (tabItems.Count > 1 && !string.IsNulllorEmpty(SearchTextBox.Text))
                 TabListBox.SelectedIndex = 1;
+                
             else if (tabItems.Count > 0)
                 TabListBox.SelectedIndex = 0;
         }
 
         public class TabItem
         {
-            public string Name { get; set; } = "";
-            public string Value { get; set; } = "";
+            public string Name { get; set; } = string.Empty;
+            public string Value { get; set; } = string.Empty;
         }
 
         List<MediaInfoParameter> GetItems(bool rawView)
@@ -188,15 +220,15 @@ namespace MediaInfoNET
 
             using (MediaInfo mediaInfo = new MediaInfo(SourcePath))
             {
-                string summary = mediaInfo.GetSummary(true, rawView);
-                string group = "";
-                string[] exclude = App.Settings.Exclude.Split(new[] { '\r', '\n' },
+                var summary = mediaInfo.GetSummary(true, rawView);
+                var group = "";
+                var exclude = App.Settings.Exclude.Split(new[] { '\r', '\n' },
                     StringSplitOptions.RemoveEmptyEntries);
 
-                for (int i = 0; i < exclude.Length; i++)
+                for (var i = 0; i < exclude.Length; i++)
                     exclude[i] = exclude[i].Trim();
 
-                List<string> added = new List<string>();
+                var added = new List<string>();
 
                 foreach (string line in summary.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
                 {
@@ -212,7 +244,7 @@ namespace MediaInfoNET
                         item.Group = group;
                         item.IsComplete = true;
                         Fix(item, rawView);
-                        string addedKey = item.Name + item.Value + item.Group;
+                        var addedKey = item.Name + item.Value + item.Group;
 
                         if (!added.Contains(addedKey))
                             items.Add(item);
@@ -259,20 +291,26 @@ namespace MediaInfoNET
 
             if (item.Name.StartsWith("FrameRate/") || item.Name.StartsWith("Frame rate"))
                 FixS(item, "fps", "");
+                
             else if (item.Name.StartsWith("Width") || item.Name.StartsWith("Height"))
                 FixS(item, "pixel");
+                
             else if (item.Name.Contains("Channel"))
                 FixS(item, "channel");
+                
             else if (item.Name.StartsWith("Bit"))
                 FixS(item, "bit");
+                
             else if (item.Name.Contains("Size"))
                 FixS(item, "Byte");
+                
             else if ((item.Name == "Encoded_Library_Settings" || item.Name == "Encoding settings")
                 && App.Settings.FormatEncoded)
-
                 Format_Encoded_Library_Settings(item);
+                
             else if (!rawView && item.Name == "Language" && item.Value.Length == 2)
                 item.Value = GetLanguageName(item.Value);
+                
             else if (item.Name.StartsWith("Format settings") || item.Name.StartsWith("Format_Settings"))
             {
                 if (item.Name.Contains("Reference frames"))
@@ -300,12 +338,12 @@ namespace MediaInfoNET
                 if (item.Group == group && item.Name == name)
                     return item.Value;
 
-            return "";
+            return string.Empty;
         }
 
         string Join(List<string> list)
         {
-            List<string> newList = new List<string>();
+            var = new List<string>();
 
             foreach (string i in list)
                 if (!string.IsNullOrEmpty(i))
@@ -316,10 +354,10 @@ namespace MediaInfoNET
 
         void UpdateContentRichTextBox()
         {
-            StringBuilder sb = new StringBuilder();
+            var sb = new StringBuilder();
             IEnumerable<MediaInfoParameter> items;
 
-            if (ActiveGroup == "Basic" && App.Settings.CompactSummary)
+            if (ActiveGroup is "Basic" && App.Settings.CompactSummary)
             {
                 List<string> values = new List<string>();
 
